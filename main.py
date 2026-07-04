@@ -6,12 +6,86 @@ import yfinance as yf
 from pydantic import BaseModel
 from typing import List, Optional
 
-from database import get_db, engine
+from database import get_db, engine, SessionLocal
 from models import Base, User, Portfolio, Security, Position, SecurityEvaluation, TradeJournal, TradeOrder
 import pandas as pd
 import random
+import os
+from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
+from telegram_notifier import send_telegram_message
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="Farmer OS API")
+load_dotenv('.env.md')
+load_dotenv('.env')  # Overrides with .env if exists
+
+def check_indicators_job():
+    print("Running check_indicators_job...")
+    db = SessionLocal()
+    try:
+        securities = db.query(Security).all()
+        symbols_to_check = set([s.symbol for s in securities])
+        
+        for symbol in symbols_to_check:
+            try:
+                ticker = yf.Ticker(symbol)
+                hist = ticker.history(period="1y")
+                if hist.empty or len(hist) < 2:
+                    continue
+                
+                closes = hist['Close']
+                current_price = float(closes.iloc[-1])
+                prev_price = float(closes.iloc[-2])
+                
+                daily_return = (current_price - prev_price) / prev_price
+                alerts = []
+                
+                if daily_return <= -0.05:
+                    alerts.append(f"급락 알림: {-daily_return*100:.1f}% 하락 (현재가: {current_price:.2f})")
+                
+                mas = [5, 20, 60, 120]
+                for ma_days in mas:
+                    if len(closes) >= ma_days:
+                        ma_val = float(closes.tail(ma_days).mean())
+                        if abs(current_price - ma_val) / ma_val <= 0.05:
+                            alerts.append(f"이평선 접근: {ma_days}일선({ma_val:.2f})의 ±5% 이내")
+                
+                if len(closes) >= 14:
+                    delta = closes.diff()
+                    gain = delta.where(delta > 0, 0.0)
+                    loss = -delta.where(delta < 0, 0.0)
+                    avg_gain = gain.ewm(com=13, min_periods=14).mean()
+                    avg_loss = loss.ewm(com=13, min_periods=14).mean()
+                    rs = avg_gain / avg_loss
+                    rsi_series = 100 - (100 / (1 + rs))
+                    rsi_val = float(rsi_series.iloc[-1])
+                else:
+                    rsi_val = 50.0
+                    
+                fear_greed_index = random.uniform(0, 100)
+                
+                if rsi_val < 30 or fear_greed_index < 30:
+                    alerts.append(f"매수 적기 (공포): RSI={rsi_val:.1f}, F&G={fear_greed_index:.1f}")
+                
+                if alerts:
+                    msg = "\n".join(alerts)
+                    send_telegram_message(f"[{symbol} 지표 알림]\n{msg}")
+                    
+            except Exception as e:
+                print(f"Error in check_indicators_job for {symbol}: {e}")
+    finally:
+        db.close()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler = BackgroundScheduler()
+    # Run every 1 hour
+    scheduler.add_job(check_indicators_job, 'interval', hours=1)
+    scheduler.start()
+    yield
+    scheduler.shutdown()
+
+app = FastAPI(title="Farmer OS API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
