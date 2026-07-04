@@ -1,5 +1,6 @@
 import streamlit as st
 import yfinance as yf
+import requests
 from database import get_db
 from models import Security, SecurityEvaluation
 import plotly.graph_objects as go
@@ -31,6 +32,22 @@ with col1:
 
 if security:
     with col2:
+        st.subheader("기술적 지표 (RSI)")
+        try:
+            resp = requests.get(f"http://localhost:8000/api/indicators/{security.symbol}")
+            if resp.status_code == 200:
+                rsi = resp.json().get("rsi_14", 50.0)
+                st.metric("RSI (14일)", f"{rsi:.1f}")
+                if rsi < 30:
+                    st.success("✅ 과매도 (RSI < 30) - 씨앗 뿌리기 구간")
+                elif rsi > 70:
+                    st.warning("⚠️ 과매수 (RSI > 70) - 수확 구간")
+                else:
+                    st.info("➖ 중립 구간")
+        except Exception:
+            st.write("지표를 불러올 수 없습니다.")
+            
+        st.divider()
         st.subheader("농부식 정성/정량 평가 입력")
         
         evaluation = db.query(SecurityEvaluation).filter(SecurityEvaluation.security_id == security.id).first()

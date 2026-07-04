@@ -7,7 +7,9 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from database import get_db, engine
-from models import Base, User, Portfolio, Security, Position, SecurityEvaluation, TradeJournal
+from models import Base, User, Portfolio, Security, Position, SecurityEvaluation, TradeJournal, TradeOrder
+import pandas as pd
+import random
 
 app = FastAPI(title="Farmer OS API")
 
@@ -215,3 +217,70 @@ def add_journal(journal: JournalBase, db: Session = Depends(get_db)):
     db.add(j)
     db.commit()
     return {"message": "Journal added"}
+
+@app.get("/api/indicators/{symbol}")
+def get_indicators(symbol: str):
+    try:
+        # VIX
+        vix_ticker = yf.Ticker("^VIX")
+        vix_hist = vix_ticker.history(period="1d")
+        vix_value = vix_hist['Close'].iloc[-1] if not vix_hist.empty else 0.0
+
+        # RSI
+        symbol_ticker = yf.Ticker(symbol)
+        hist = symbol_ticker.history(period="6mo")
+        rsi_value = 0.0
+        if not hist.empty and len(hist) >= 14:
+            close_prices = hist['Close']
+            delta = close_prices.diff()
+            gain = delta.where(delta > 0, 0.0)
+            loss = -delta.where(delta < 0, 0.0)
+            avg_gain = gain.ewm(com=13, min_periods=14).mean()
+            avg_loss = loss.ewm(com=13, min_periods=14).mean()
+            rs = avg_gain / avg_loss
+            rsi_series = 100 - (100 / (1 + rs))
+            rsi_value = float(rsi_series.iloc[-1])
+
+        # Fear & Greed (Mock)
+        fear_greed_index = random.uniform(0, 100)
+
+        return {
+            "symbol": symbol,
+            "vix": float(vix_value),
+            "rsi_14": rsi_value,
+            "fear_and_greed": fear_greed_index
+        }
+    except Exception as e:
+        return {
+            "symbol": symbol,
+            "vix": 0.0,
+            "rsi_14": 0.0,
+            "fear_and_greed": 50.0
+        }
+
+class OrderBase(BaseModel):
+    symbol: str
+    side: str
+    quantity: float
+
+@app.post("/api/toss/order")
+def mock_toss_order(order: OrderBase, db: Session = Depends(get_db)):
+    try:
+        new_order = TradeOrder(
+            symbol=order.symbol,
+            side=order.side,
+            quantity=order.quantity
+        )
+        db.add(new_order)
+        db.commit()
+        db.refresh(new_order)
+        return {
+            "message": "Order successfully logged (mock)",
+            "order_id": new_order.id,
+            "symbol": new_order.symbol,
+            "side": new_order.side,
+            "quantity": new_order.quantity
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

@@ -1,5 +1,5 @@
 from database import engine, SessionLocal
-from models import Base, User, Portfolio, Security
+from models import Base, User, Portfolio, Security, TossApiConfig, TradeOrder
 
 def init_db():
     Base.metadata.create_all(bind=engine)

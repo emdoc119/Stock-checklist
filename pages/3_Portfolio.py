@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import requests
 from database import get_db
 from models import Portfolio, Position, Security
 
@@ -72,3 +73,31 @@ if positions:
             st.info("보유 금액이 0입니다.")
 else:
     st.info("현재 보유 중인 종목이 없습니다.")
+
+st.divider()
+st.subheader("🤖 자동매매 (주식 모으기)")
+auto_trading_toggle = st.toggle("Auto-Trading (Toss API) - Coming Soon")
+
+if auto_trading_toggle:
+    st.info("Farmer Score와 RSI를 기반으로 조건 만족 시 자동으로 적립식 매수를 진행합니다.")
+    
+    st.write("### [미리보기] 매수 규칙 설정")
+    target_symbol = st.selectbox("모으기 종목 선택", [s.symbol for s in db.query(Security).all()] if db.query(Security).first() else ["AAPL"])
+    st.slider("기준 Farmer Score (이상일 때 매수)", 0, 100, 70, disabled=True)
+    st.slider("기준 RSI (이하일 때 매수)", 0, 100, 40, disabled=True)
+    qty = st.number_input("1회 매수 수량", min_value=0.1, value=1.0, step=0.1)
+    
+    if st.button("Toss API 연동 및 1회 주문 (Mock)"):
+        try:
+            payload = {
+                "symbol": target_symbol,
+                "side": "buy",
+                "quantity": qty
+            }
+            resp = requests.post("http://localhost:8000/api/toss/order", json=payload)
+            if resp.status_code == 200:
+                st.success(f"Mock 주문 성공! {resp.json()}")
+            else:
+                st.error("주문 실패")
+        except Exception as e:
+            st.error(f"주문 요청 중 오류 발생: {e}")

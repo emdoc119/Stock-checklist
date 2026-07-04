@@ -1,5 +1,6 @@
 import streamlit as st
 import yfinance as yf
+import requests
 from database import get_db
 from models import Portfolio, Position
 
@@ -26,7 +27,18 @@ def get_market_data():
         "NASDAQ": (n_current, n_current - n_prev)
     }
 
+@st.cache_data(ttl=60)
+def get_indicators(symbol="SPY"):
+    try:
+        resp = requests.get(f"http://localhost:8000/api/indicators/{symbol}")
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        pass
+    return {"vix": 0.0, "rsi_14": 0.0, "fear_and_greed": 50.0}
+
 market_data = get_market_data()
+indicators = get_indicators("SPY")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -37,10 +49,17 @@ with col1:
     m1.metric("KOSPI", f"{k_val:.2f}", f"{k_diff:.2f}")
     m2.metric("NASDAQ", f"{n_val:.2f}", f"{n_diff:.2f}")
     
+    st.subheader("시장 심리 지표")
+    i1, i2 = st.columns(2)
+    vix = indicators.get("vix", 0)
+    fg = indicators.get("fear_and_greed", 50)
+    i1.metric("VIX (변동성 지수)", f"{vix:.2f}")
+    i2.metric("Fear & Greed Index", f"{fg:.0f}")
+    
     # Simple heuristic for UI demo
-    if k_diff < -30 or n_diff < -150:
+    if vix > 30 or fg < 30:
         st.error("📉 시장 공포 구간 - 씨앗을 뿌릴 준비가 되었는가?")
-    elif k_diff > 30 or n_diff > 150:
+    elif vix < 15 or fg > 70:
         st.success("📈 시장 낙관 구간 - 수확과 현금 확보를 고려할 때인가?")
     else:
         st.info("➖ 중립 구간 - 인내하며 관찰할 시기")

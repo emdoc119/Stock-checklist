@@ -69,5 +69,21 @@ class TradeJournal(Base):
     checklist_passed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class TossApiConfig(Base):
+    __tablename__ = "toss_api_configs"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    api_key = Column(String)
+    api_secret = Column(String)
+    is_active = Column(Boolean, default=True)
+
+class TradeOrder(Base):
+    __tablename__ = "trade_orders"
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String)
+    side = Column(String) # BUY / SELL
+    quantity = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 def init_db():
     Base.metadata.create_all(bind=engine)
