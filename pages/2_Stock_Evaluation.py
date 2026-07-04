@@ -33,19 +33,51 @@ with col1:
 if security:
     with col2:
         st.subheader("기술적 지표 (RSI)")
-        try:
-            resp = requests.get(f"http://localhost:8000/api/indicators/{security.symbol}")
-            if resp.status_code == 200:
-                rsi = resp.json().get("rsi_14", 50.0)
-                st.metric("RSI (14일)", f"{rsi:.1f}")
-                if rsi < 30:
-                    st.success("✅ 과매도 (RSI < 30) - 씨앗 뿌리기 구간")
-                elif rsi > 70:
-                    st.warning("⚠️ 과매수 (RSI > 70) - 수확 구간")
+        with st.spinner('데이터를 불러오는 중입니다...'):
+            try:
+                resp = requests.get(f"http://localhost:8000/api/indicators/{security.symbol}")
+                if resp.status_code == 200:
+                    rsi = resp.json().get("rsi_14", 50.0)
+                    st.metric("RSI (14일)", f"{rsi:.1f}", help="RSI 30 이하는 과매도(매수 추천), 70 이상은 과매수(매도 추천) 구간으로 해석됩니다.")
+                    if rsi < 30:
+                        st.success("✅ 과매도 (RSI < 30) - 씨앗 뿌리기 구간")
+                    elif rsi > 70:
+                        st.warning("⚠️ 과매수 (RSI > 70) - 수확 구간")
+                    else:
+                        st.info("➖ 중립 구간")
+            except Exception:
+                st.write("지표를 불러올 수 없습니다.")
+                
+        st.subheader("종목 차트 (최근 6개월)")
+        with st.spinner('차트 데이터를 불러오는 중입니다...'):
+            try:
+                ticker = yf.Ticker(security.symbol)
+                hist = ticker.history(period="6mo")
+                if not hist.empty:
+                    # Calculate MAs
+                    hist['MA5'] = hist['Close'].rolling(window=5).mean()
+                    hist['MA20'] = hist['Close'].rolling(window=20).mean()
+                    hist['MA60'] = hist['Close'].rolling(window=60).mean()
+                    hist['MA120'] = hist['Close'].rolling(window=120).mean()
+                    
+                    fig_chart = go.Figure(data=[go.Candlestick(x=hist.index,
+                                    open=hist['Open'],
+                                    high=hist['High'],
+                                    low=hist['Low'],
+                                    close=hist['Close'],
+                                    name='Candlestick')])
+                                    
+                    fig_chart.add_trace(go.Scatter(x=hist.index, y=hist['MA5'], mode='lines', name='5일선', line=dict(color='blue', width=1)))
+                    fig_chart.add_trace(go.Scatter(x=hist.index, y=hist['MA20'], mode='lines', name='20일선', line=dict(color='red', width=1)))
+                    fig_chart.add_trace(go.Scatter(x=hist.index, y=hist['MA60'], mode='lines', name='60일선', line=dict(color='green', width=1)))
+                    fig_chart.add_trace(go.Scatter(x=hist.index, y=hist['MA120'], mode='lines', name='120일선', line=dict(color='purple', width=1)))
+                    
+                    fig_chart.update_layout(xaxis_rangeslider_visible=False, title=f"{security.symbol} 일봉 차트", margin=dict(t=30, b=0, l=0, r=0))
+                    st.plotly_chart(fig_chart, use_container_width=True)
                 else:
-                    st.info("➖ 중립 구간")
-        except Exception:
-            st.write("지표를 불러올 수 없습니다.")
+                    st.info("차트 데이터가 없습니다.")
+            except Exception as e:
+                st.error("차트를 불러오는 중 오류가 발생했습니다.")
             
         st.divider()
         st.subheader("농부식 정성/정량 평가 입력")
@@ -89,6 +121,7 @@ if security:
                 evaluation.evaluation_date = date.today()
                 
                 db.commit()
+                st.toast(f"평가 저장 완료! 종합 점수: {total:.1f}점", icon="✅")
                 st.success(f"평가 저장 완료! 종합 점수: {total:.1f}점")
 
     # Show radar chart

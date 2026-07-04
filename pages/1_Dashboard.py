@@ -37,8 +37,9 @@ def get_indicators(symbol="SPY"):
         pass
     return {"vix": 0.0, "rsi_14": 0.0, "fear_and_greed": 50.0}
 
-market_data = get_market_data()
-indicators = get_indicators("SPY")
+with st.spinner('데이터를 불러오는 중입니다...'):
+    market_data = get_market_data()
+    indicators = get_indicators("SPY")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -53,8 +54,8 @@ with col1:
     i1, i2 = st.columns(2)
     vix = indicators.get("vix", 0)
     fg = indicators.get("fear_and_greed", 50)
-    i1.metric("VIX (변동성 지수)", f"{vix:.2f}")
-    i2.metric("Fear & Greed Index", f"{fg:.0f}")
+    i1.metric("VIX (변동성 지수)", f"{vix:.2f}", help="VIX가 30 이상이면 시장에 공포가 팽배함을 의미하며, 저가 매수의 기회일 수 있습니다.")
+    i2.metric("Fear & Greed Index", f"{fg:.0f}", help="0-25: 극단적 공포, 25-45: 공포, 45-55: 중립, 55-75: 탐욕, 75-100: 극단적 탐욕. 시장 심리를 나타냅니다.")
     
     # Simple heuristic for UI demo
     if vix > 30 or fg < 30:

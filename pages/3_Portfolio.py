@@ -2,8 +2,22 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import requests
+import yfinance as yf
 from database import get_db
 from models import Portfolio, Position, Security
+
+@st.cache_data(ttl=60)
+def get_live_price(symbol):
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period="1d")
+        if not hist.empty:
+            return float(hist['Close'].iloc[-1])
+        info = ticker.info
+        price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose") or 0.0
+        return float(price)
+    except Exception:
+        return 0.0
 
 st.set_page_config(page_title="Portfolio", layout="wide")
 st.title("💼 포트폴리오 (집중도 및 리스크 관리)")
@@ -44,33 +58,49 @@ with st.expander("➕ 새로운 포지션 추가 (또는 수정)"):
 positions = db.query(Position).filter(Position.portfolio_id == portfolio.id).all()
 
 if positions:
-    data = []
-    total_value = 0
-    for p in positions:
-        # In a real app, we'd fetch live price here. Using avg_price as current for simplicity in MVP.
-        val = p.quantity * p.avg_price
-        total_value += val
-        data.append({
-            "종목": p.security.symbol,
-            "수량": p.quantity,
-            "평단가": p.avg_price,
-            "평가액": val
-        })
+    with st.spinner("실시간 주가를 불러오는 중입니다..."):
+        data = []
+        total_value = 0
+        total_invested = 0
+        for p in positions:
+            live_price = get_live_price(p.security.symbol)
+            if live_price == 0.0:
+                live_price = p.avg_price  # Fallback
+            
+            val = p.quantity * live_price
+            invested = p.quantity * p.avg_price
+            total_value += val
+            total_invested += invested
+            
+            ret_pct = ((live_price - p.avg_price) / p.avg_price * 100) if p.avg_price > 0 else 0
+            ret_str = f"🔴 {ret_pct:.2f}%" if ret_pct < 0 else f"🟢 +{ret_pct:.2f}%"
+            
+            data.append({
+                "종목": p.security.symbol,
+                "수량": p.quantity,
+                "평단가": p.avg_price,
+                "현재가": live_price,
+                "수익률": ret_str,
+                "평가액": val
+            })
+            
+        df = pd.DataFrame(data)
         
-    df = pd.DataFrame(data)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("### 보유 종목 목록")
-        st.dataframe(df, use_container_width=True)
-    
-    with col2:
-        st.write("### 비중 분석 (Concentration)")
-        if total_value > 0:
-            fig = px.pie(df, values='평가액', names='종목', hole=0.3)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("보유 금액이 0입니다.")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("### 보유 종목 목록")
+            st.dataframe(df, use_container_width=True)
+            
+            total_ret_pct = ((total_value - total_invested) / total_invested * 100) if total_invested > 0 else 0
+            st.metric("총 포트폴리오 평가액", f"${total_value:,.2f}", f"{total_ret_pct:.2f}%")
+        
+        with col2:
+            st.write("### 비중 분석 (Concentration)")
+            if total_value > 0:
+                fig = px.pie(df, values='평가액', names='종목', hole=0.3)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("보유 금액이 0입니다.")
 else:
     st.info("현재 보유 중인 종목이 없습니다.")
 

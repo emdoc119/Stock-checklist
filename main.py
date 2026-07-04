@@ -135,10 +135,10 @@ def get_market_data():
         k_hist = kospi.history(period="1mo")
         n_hist = ndx.history(period="1mo")
         
-        k_curr = k_hist['Close'].iloc[-1] if not k_hist.empty else 0
-        k_prev = k_hist['Close'].iloc[-2] if len(k_hist) > 1 else 0
-        n_curr = n_hist['Close'].iloc[-1] if not n_hist.empty else 0
-        n_prev = n_hist['Close'].iloc[-2] if len(n_hist) > 1 else 0
+        k_curr = float(k_hist['Close'].iloc[-1]) if not k_hist.empty else 0.0
+        k_prev = float(k_hist['Close'].iloc[-2]) if len(k_hist) > 1 else k_curr
+        n_curr = float(n_hist['Close'].iloc[-1]) if not n_hist.empty else 0.0
+        n_prev = float(n_hist['Close'].iloc[-2]) if len(n_hist) > 1 else n_curr
         
         return MarketData(
             kospi_val=k_curr, kospi_diff=k_curr - k_prev,
@@ -147,7 +147,8 @@ def get_market_data():
             nasdaq_history=n_hist['Close'].tolist()[-30:] if not n_hist.empty else []
         )
     except Exception as e:
-        return MarketData(kospi_val=0, kospi_diff=0, nasdaq_val=0, nasdaq_diff=0, kospi_history=[], nasdaq_history=[])
+        print(f"Error in get_market_data: {e}")
+        return MarketData(kospi_val=0.0, kospi_diff=0.0, nasdaq_val=0.0, nasdaq_diff=0.0, kospi_history=[], nasdaq_history=[])
 
 @app.get("/api/info/{symbol}")
 def get_stock_info(symbol: str):
@@ -162,7 +163,8 @@ def get_stock_info(symbol: str):
             "dividendYield": info.get("dividendYield"),
             "sector": info.get("sector")
         }
-    except Exception:
+    except Exception as e:
+        print(f"Error in get_stock_info for {symbol}: {e}")
         return {}
 
 @app.get("/api/portfolio")
@@ -302,12 +304,12 @@ def get_indicators(symbol: str):
         # VIX
         vix_ticker = yf.Ticker("^VIX")
         vix_hist = vix_ticker.history(period="1d")
-        vix_value = vix_hist['Close'].iloc[-1] if not vix_hist.empty else 0.0
+        vix_value = float(vix_hist['Close'].iloc[-1]) if not vix_hist.empty else 0.0
 
         # RSI
         symbol_ticker = yf.Ticker(symbol)
         hist = symbol_ticker.history(period="6mo")
-        rsi_value = 0.0
+        rsi_value = 50.0
         if not hist.empty and len(hist) >= 14:
             close_prices = hist['Close']
             delta = close_prices.diff()
@@ -329,10 +331,11 @@ def get_indicators(symbol: str):
             "fear_and_greed": fear_greed_index
         }
     except Exception as e:
+        print(f"Error in get_indicators for {symbol}: {e}")
         return {
             "symbol": symbol,
             "vix": 0.0,
-            "rsi_14": 0.0,
+            "rsi_14": 50.0,
             "fear_and_greed": 50.0
         }
 
