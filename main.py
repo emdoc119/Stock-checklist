@@ -19,6 +19,10 @@ from contextlib import asynccontextmanager
 load_dotenv('.env.md')
 load_dotenv('.env')  # Overrides with .env if exists
 
+from toss_api_client import TossApiClient
+
+EXECUTE_REAL_TRADES = False
+
 def check_indicators_job():
     print("Running check_indicators_job...")
     db = SessionLocal()
@@ -348,12 +352,43 @@ def mock_toss_order(order: OrderBase, db: Session = Depends(get_db)):
         db.add(new_order)
         db.commit()
         db.refresh(new_order)
+        
+        client = TossApiClient()
+        price = 0.0  # Market order mock
+        
+        if EXECUTE_REAL_TRADES:
+            response_data = client.place_order(
+                symbol=order.symbol, 
+                qty=order.quantity, 
+                side=order.side, 
+                price=price
+            )
+            message = "Order successfully placed via Toss OpenAPI"
+            api_payload = response_data
+        else:
+            message = "Order successfully logged (mock, execution disabled)"
+            api_payload = {
+                "symbol": order.symbol,
+                "quantity": order.quantity,
+                "side": order.side,
+                "price": price,
+                "mocked_endpoint": f"{client.BASE_URL}/trading/orders",
+                "simulated": True
+            }
+            # Attempt to fetch token to verify integration logic
+            try:
+                token = client.get_access_token()
+                api_payload["token_fetched"] = "success" if token else "failed"
+            except Exception as e:
+                api_payload["token_fetched"] = f"error: {str(e)}"
+
         return {
-            "message": "Order successfully logged (mock)",
+            "message": message,
             "order_id": new_order.id,
             "symbol": new_order.symbol,
             "side": new_order.side,
-            "quantity": new_order.quantity
+            "quantity": new_order.quantity,
+            "api_payload": api_payload
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
