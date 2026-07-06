@@ -4,8 +4,10 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 import numpy as np
+from ui_utils import inject_custom_css
 
 st.set_page_config(page_title="Backtesting", layout="wide", page_icon="⚙️")
+inject_custom_css()
 st.title("⚙️ Strategy Backtesting")
 st.markdown("특정 종목에 대해 퀀트 투자 전략을 백테스트하고 성과를 평가합니다.")
 
@@ -102,7 +104,8 @@ if st.sidebar.button("🚀 백테스트 실행", use_container_width=True):
                 df_melted, x="date", y="Equity", color="Type",
                 title=f"{ticker} - {strategy} Backtest",
                 labels={"date": "Date", "Equity": "Portfolio Value ($)"},
-                color_discrete_map={"Strategy": "#00CC96", "Buy & Hold": "#636EFA"}
+                color_discrete_map={"Strategy": "#00CC96", "Buy & Hold": "#636EFA"},
+                template="plotly_dark"
             )
             fig.update_layout(hovermode="x unified", legend_title_text="")
             st.plotly_chart(fig, use_container_width=True)

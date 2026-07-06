@@ -1,5 +1,7 @@
 import streamlit as st
+from ui_utils import inject_custom_css
 st.set_page_config(page_title="Dashboard", layout="wide")
+inject_custom_css()
 
 import yfinance as yf
 import requests

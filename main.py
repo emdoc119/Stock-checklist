@@ -294,47 +294,88 @@ def update_position(pos: PositionBase, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Position updated"}
 
-@app.post("/api/portfolio/sync_toss")
-def sync_toss_portfolio(db: Session = Depends(get_db)):
+@app.post("/api/portfolio/init_paper_trading")
+def init_paper_trading(db: Session = Depends(get_db)):
     try:
         portfolio = db.query(Portfolio).first()
         if not portfolio:
             raise HTTPException(status_code=404, detail="Portfolio not found")
             
-        client = TossApiClient()
-        balances = client.get_balances()
+        # Set starting cash balance
+        portfolio.target_cash_pct = 100000.0
         
         # Clear existing positions
         db.query(Position).filter(Position.portfolio_id == portfolio.id).delete()
         
-        # Insert new positions
-        new_positions = []
-        for b in balances:
-            symbol = b.get("symbol")
-            qty = b.get("quantity", 0)
-            avg_price = b.get("avg_price", 0)
-            
-            # Ensure security exists in the DB, else create it
-            sec = db.query(Security).filter(Security.symbol == symbol).first()
-            if not sec:
-                sec = Security(symbol=symbol, name=symbol, country="US" if not symbol.endswith(".KS") and not symbol.endswith(".KQ") else "KR")
-                db.add(sec)
-                db.commit()
-                db.refresh(sec)
-                
-            db_pos = Position(portfolio_id=portfolio.id, security_id=sec.id, quantity=qty, avg_price=avg_price)
-            db.add(db_pos)
-            new_positions.append({
-                "symbol": symbol,
-                "quantity": qty,
-                "avg_price": avg_price
-            })
-            
         db.commit()
-        return {"message": "Portfolio synced with Toss", "positions": new_positions}
+        return {"message": "Paper trading initialized with $100,000 cash balance."}
     except Exception as e:
         db.rollback()
-        print(f"Error syncing toss portfolio: {e}")
+        print(f"Error initializing paper trading: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class PaperTradeRequest(BaseModel):
+    symbol: str
+    quantity: float
+    price: float
+    side: str
+
+@app.post("/api/portfolio/paper_trade")
+def paper_trade(trade: PaperTradeRequest, db: Session = Depends(get_db)):
+    try:
+        portfolio = db.query(Portfolio).first()
+        if not portfolio:
+            raise HTTPException(status_code=404, detail="Portfolio not found")
+        
+        sec = db.query(Security).filter(Security.symbol == trade.symbol).first()
+        if not sec:
+            sec = Security(symbol=trade.symbol, name=trade.symbol, country="US" if not trade.symbol.endswith(".KS") and not trade.symbol.endswith(".KQ") else "KR")
+            db.add(sec)
+            db.commit()
+            db.refresh(sec)
+            
+        db_pos = db.query(Position).filter(Position.portfolio_id == portfolio.id, Position.security_id == sec.id).first()
+        trade_amount = trade.quantity * trade.price
+        
+        if trade.side.lower() == "buy":
+            if portfolio.target_cash_pct is None:
+                portfolio.target_cash_pct = 100000.0
+            
+            if portfolio.target_cash_pct < trade_amount:
+                raise HTTPException(status_code=400, detail="Not enough cash")
+                
+            portfolio.target_cash_pct -= trade_amount
+            
+            if db_pos:
+                total_cost = (db_pos.quantity * db_pos.avg_price) + trade_amount
+                db_pos.quantity += trade.quantity
+                db_pos.avg_price = total_cost / db_pos.quantity
+            else:
+                db_pos = Position(portfolio_id=portfolio.id, security_id=sec.id, quantity=trade.quantity, avg_price=trade.price)
+                db.add(db_pos)
+                
+        elif trade.side.lower() == "sell":
+            if not db_pos or db_pos.quantity < trade.quantity:
+                raise HTTPException(status_code=400, detail="Not enough quantity to sell")
+                
+            if portfolio.target_cash_pct is None:
+                portfolio.target_cash_pct = 0.0
+            portfolio.target_cash_pct += trade_amount
+            db_pos.quantity -= trade.quantity
+            
+            if db_pos.quantity == 0:
+                db.delete(db_pos)
+                
+        else:
+            raise HTTPException(status_code=400, detail="Invalid side. Use 'buy' or 'sell'.")
+            
+        db.commit()
+        return {"message": f"Successfully paper traded: {trade.side} {trade.quantity} of {trade.symbol}"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/securities")

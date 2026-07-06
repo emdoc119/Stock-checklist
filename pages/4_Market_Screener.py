@@ -1,8 +1,10 @@
 import streamlit as st
 import requests
 import pandas as pd
+from ui_utils import inject_custom_css
 
 st.set_page_config(page_title="Market Screener", layout="wide", page_icon="🔍")
+inject_custom_css()
 st.title("🔍 Market Screener")
 st.markdown("시장에서 과매도되거나 주요 지지선에 근접한 종목을 발굴합니다.")
 

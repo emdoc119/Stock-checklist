@@ -5,8 +5,10 @@ from database import get_db
 from models import Security, SecurityEvaluation
 import plotly.graph_objects as go
 from datetime import date
+from ui_utils import inject_custom_css
 
 st.set_page_config(page_title="Stock Evaluation", layout="wide")
+inject_custom_css()
 st.title("🌱 종목 평가 (Farmer Score)")
 
 db = next(get_db())
@@ -65,14 +67,23 @@ if security:
                                     high=hist['High'],
                                     low=hist['Low'],
                                     close=hist['Close'],
+                                    increasing=dict(line=dict(color='#00ff00'), fillcolor='#00ff00'),
+                                    decreasing=dict(line=dict(color='#ff073a'), fillcolor='#ff073a'),
                                     name='Candlestick')])
                                     
-                    fig_chart.add_trace(go.Scatter(x=hist.index, y=hist['MA5'], mode='lines', name='5일선', line=dict(color='blue', width=1)))
-                    fig_chart.add_trace(go.Scatter(x=hist.index, y=hist['MA20'], mode='lines', name='20일선', line=dict(color='red', width=1)))
-                    fig_chart.add_trace(go.Scatter(x=hist.index, y=hist['MA60'], mode='lines', name='60일선', line=dict(color='green', width=1)))
-                    fig_chart.add_trace(go.Scatter(x=hist.index, y=hist['MA120'], mode='lines', name='120일선', line=dict(color='purple', width=1)))
+                    fig_chart.add_trace(go.Scatter(x=hist.index, y=hist['MA5'], mode='lines', name='5일선', line=dict(color='#1f77b4', width=1)))
+                    fig_chart.add_trace(go.Scatter(x=hist.index, y=hist['MA20'], mode='lines', name='20일선', line=dict(color='#ff7f0e', width=1)))
+                    fig_chart.add_trace(go.Scatter(x=hist.index, y=hist['MA60'], mode='lines', name='60일선', line=dict(color='#2ca02c', width=1)))
+                    fig_chart.add_trace(go.Scatter(x=hist.index, y=hist['MA120'], mode='lines', name='120일선', line=dict(color='#9467bd', width=1)))
                     
-                    fig_chart.update_layout(xaxis_rangeslider_visible=False, title=f"{security.symbol} 일봉 차트", margin=dict(t=30, b=0, l=0, r=0))
+                    fig_chart.update_layout(
+                        template="plotly_dark",
+                        xaxis_rangeslider_visible=False,
+                        title=f"{security.symbol} 일봉 차트",
+                        margin=dict(t=30, b=0, l=0, r=0),
+                        xaxis=dict(showgrid=False),
+                        yaxis=dict(showgrid=False)
+                    )
                     st.plotly_chart(fig_chart, use_container_width=True)
                 else:
                     st.info("차트 데이터가 없습니다.")
@@ -146,6 +157,7 @@ if security:
     ))
 
     fig.update_layout(
+      template="plotly_dark",
       polar=dict(
         radialaxis=dict(
           visible=True,

@@ -1,5 +1,8 @@
 import streamlit as st
+from ui_utils import inject_custom_css
+
 st.set_page_config(page_title="Portfolio", layout="wide")
+inject_custom_css()
 
 import pandas as pd
 import plotly.express as px
@@ -32,17 +35,17 @@ if not portfolio:
 
 st.subheader(f"포트폴리오: {portfolio.name}")
 
-# Toss sync button
-if st.button("🔄 토스증권 계좌 동기화", type="primary", use_container_width=True):
-    with st.spinner("토스증권 실시간 잔고를 불러오는 중입니다..."):
+# Paper Trading init button
+if st.button("🚀 실전 모의투자(Paper Trading) 시작하기", type="primary", use_container_width=True):
+    with st.spinner("모의투자 계좌를 초기화하는 중입니다..."):
         try:
-            resp = requests.post("http://localhost:8000/api/portfolio/sync_toss")
+            resp = requests.post("http://localhost:8000/api/portfolio/init_paper_trading")
             if resp.status_code == 200:
-                st.toast("토스증권 계좌 동기화 성공!", icon="✅")
+                st.toast("모의투자 시작 완료!", icon="✅")
             else:
-                st.error("동기화 실패")
+                st.error("초기화 실패")
         except Exception as e:
-            st.error(f"동기화 중 오류 발생: {e}")
+            st.error(f"초기화 중 오류 발생: {e}")
     st.rerun()
 
 
@@ -112,12 +115,41 @@ if positions:
         with col2:
             st.write("### 비중 분석 (Concentration)")
             if total_value > 0:
-                fig = px.pie(df, values='평가액', names='종목', hole=0.3)
+                fig = px.pie(df, values='평가액', names='종목', hole=0.3, template="plotly_dark")
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("보유 금액이 0입니다.")
 else:
     st.info("현재 보유 중인 종목이 없습니다.")
+
+st.divider()
+st.subheader("📈 모의투자 주문 (Paper Trading)")
+with st.form("paper_trade_form"):
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        trade_symbol = st.selectbox("종목", [s.symbol for s in db.query(Security).all()] if db.query(Security).first() else ["AAPL"], key="trade_symbol")
+    with c2:
+        trade_side = st.selectbox("구분", ["buy", "sell"], key="trade_side")
+    with c3:
+        trade_qty = st.number_input("수량", min_value=1.0, step=1.0, key="trade_qty")
+        
+    submit_trade = st.form_submit_button("주문 전송")
+    if submit_trade:
+        with st.spinner("주문 처리 중..."):
+            try:
+                payload = {
+                    "symbol": trade_symbol,
+                    "side": trade_side,
+                    "quantity": trade_qty
+                }
+                resp = requests.post("http://localhost:8000/api/portfolio/paper_trade", json=payload)
+                if resp.status_code == 200:
+                    st.success(f"주문 체결 완료: {trade_side.upper()} {trade_qty} {trade_symbol}")
+                    st.rerun()
+                else:
+                    st.error(f"주문 실패: {resp.text}")
+            except Exception as e:
+                st.error(f"오류 발생: {e}")
 
 st.divider()
 st.subheader("🤖 자동매매 (주식 모으기)")

@@ -2,8 +2,10 @@ import streamlit as st
 import pandas as pd
 from database import get_db
 from models import TradeJournal, Security
+from ui_utils import inject_custom_css
 
 st.set_page_config(page_title="Reminders & Journal", layout="wide")
+inject_custom_css()
 st.title("📝 Reminders & Journal")
 
 db = next(get_db())

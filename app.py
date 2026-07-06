@@ -3,6 +3,9 @@ import os
 
 st.set_page_config(page_title="Farmer OS", layout="wide", page_icon="🌾")
 
+from ui_utils import inject_custom_css
+inject_custom_css()
+
 st.title("🌾 Farmer OS (농부의 투자 철학)")
 st.write("왼쪽 사이드바에서 메뉴를 선택하세요.")
 
