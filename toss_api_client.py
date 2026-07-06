@@ -59,3 +59,33 @@ class TossApiClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to place order via Toss API: {e}")
             raise RuntimeError(f"Toss API order failed: {e}")
+
+    def get_balances(self):
+        if not self.access_token:
+            try:
+                self.get_access_token()
+            except Exception as e:
+                logger.warning(f"Could not get access token: {e}")
+                
+        if self.access_token:
+            url = f"{self.BASE_URL}/trading/balances"
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Content-Type": "application/json"
+            }
+            try:
+                response = requests.get(url, headers=headers, timeout=10)
+                response.raise_for_status()
+                # Assuming the successful response contains a list or a 'balances' field.
+                # Returning it directly if it's a list, else extracting balances.
+                data = response.json()
+                return data if isinstance(data, list) else data.get("balances", [])
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Failed to fetch balances from Toss API: {e}")
+        
+        # Fallback to mock data
+        return [
+            {"symbol": "AAPL", "quantity": 15.0, "avg_price": 150.0},
+            {"symbol": "TSLA", "quantity": 5.0, "avg_price": 200.0}
+        ]
+

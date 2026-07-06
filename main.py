@@ -144,8 +144,17 @@ class MarketData(BaseModel):
     kospi_diff: float
     nasdaq_val: float
     nasdaq_diff: float
+    kosdaq_val: float
+    kosdaq_diff: float
+    sp500_val: float
+    sp500_diff: float
+    russell_val: float
+    russell_diff: float
     kospi_history: List[float]
     nasdaq_history: List[float]
+    kosdaq_history: List[float]
+    sp500_history: List[float]
+    russell_history: List[float]
 
 class PositionBase(BaseModel):
     symbol: str
@@ -170,25 +179,58 @@ class JournalBase(BaseModel):
 @app.get("/api/market", response_model=MarketData)
 def get_market_data():
     try:
-        kospi = yf.Ticker("^KS11")
-        ndx = yf.Ticker("^IXIC")
-        k_hist = kospi.history(period="1mo")
-        n_hist = ndx.history(period="1mo")
+        tickers = {
+            "kospi": "^KS11",
+            "nasdaq": "^IXIC",
+            "kosdaq": "^KQ11",
+            "sp500": "^GSPC",
+            "russell": "^RUT"
+        }
         
-        k_curr = float(k_hist['Close'].iloc[-1]) if not k_hist.empty else 0.0
-        k_prev = float(k_hist['Close'].iloc[-2]) if len(k_hist) > 1 else k_curr
-        n_curr = float(n_hist['Close'].iloc[-1]) if not n_hist.empty else 0.0
-        n_prev = float(n_hist['Close'].iloc[-2]) if len(n_hist) > 1 else n_curr
-        
+        results = {}
+        for key, symbol in tickers.items():
+            val = 0.0
+            diff = 0.0
+            hist_list = []
+            try:
+                t = yf.Ticker(symbol)
+                hist = t.history(period="1mo")
+                if not hist.empty:
+                    val = float(hist['Close'].iloc[-1])
+                    prev = float(hist['Close'].iloc[-2]) if len(hist) > 1 else val
+                    diff = val - prev
+                    hist_list = hist['Close'].tolist()[-30:]
+            except Exception as e:
+                print(f"Error fetching {symbol}: {e}")
+            
+            results[key] = {
+                "val": val,
+                "diff": diff,
+                "hist": hist_list
+            }
+
         return MarketData(
-            kospi_val=k_curr, kospi_diff=k_curr - k_prev,
-            nasdaq_val=n_curr, nasdaq_diff=n_curr - n_prev,
-            kospi_history=k_hist['Close'].tolist()[-30:] if not k_hist.empty else [],
-            nasdaq_history=n_hist['Close'].tolist()[-30:] if not n_hist.empty else []
+            kospi_val=results["kospi"]["val"], kospi_diff=results["kospi"]["diff"],
+            nasdaq_val=results["nasdaq"]["val"], nasdaq_diff=results["nasdaq"]["diff"],
+            kosdaq_val=results["kosdaq"]["val"], kosdaq_diff=results["kosdaq"]["diff"],
+            sp500_val=results["sp500"]["val"], sp500_diff=results["sp500"]["diff"],
+            russell_val=results["russell"]["val"], russell_diff=results["russell"]["diff"],
+            kospi_history=results["kospi"]["hist"],
+            nasdaq_history=results["nasdaq"]["hist"],
+            kosdaq_history=results["kosdaq"]["hist"],
+            sp500_history=results["sp500"]["hist"],
+            russell_history=results["russell"]["hist"]
         )
     except Exception as e:
         print(f"Error in get_market_data: {e}")
-        return MarketData(kospi_val=0.0, kospi_diff=0.0, nasdaq_val=0.0, nasdaq_diff=0.0, kospi_history=[], nasdaq_history=[])
+        return MarketData(
+            kospi_val=0.0, kospi_diff=0.0,
+            nasdaq_val=0.0, nasdaq_diff=0.0,
+            kosdaq_val=0.0, kosdaq_diff=0.0,
+            sp500_val=0.0, sp500_diff=0.0,
+            russell_val=0.0, russell_diff=0.0,
+            kospi_history=[], nasdaq_history=[], kosdaq_history=[], sp500_history=[], russell_history=[]
+        )
 
 @app.get("/api/info/{symbol}")
 def get_stock_info(symbol: str):
@@ -251,6 +293,49 @@ def update_position(pos: PositionBase, db: Session = Depends(get_db)):
         db.add(db_pos)
     db.commit()
     return {"message": "Position updated"}
+
+@app.post("/api/portfolio/sync_toss")
+def sync_toss_portfolio(db: Session = Depends(get_db)):
+    try:
+        portfolio = db.query(Portfolio).first()
+        if not portfolio:
+            raise HTTPException(status_code=404, detail="Portfolio not found")
+            
+        client = TossApiClient()
+        balances = client.get_balances()
+        
+        # Clear existing positions
+        db.query(Position).filter(Position.portfolio_id == portfolio.id).delete()
+        
+        # Insert new positions
+        new_positions = []
+        for b in balances:
+            symbol = b.get("symbol")
+            qty = b.get("quantity", 0)
+            avg_price = b.get("avg_price", 0)
+            
+            # Ensure security exists in the DB, else create it
+            sec = db.query(Security).filter(Security.symbol == symbol).first()
+            if not sec:
+                sec = Security(symbol=symbol, name=symbol, country="US" if not symbol.endswith(".KS") and not symbol.endswith(".KQ") else "KR")
+                db.add(sec)
+                db.commit()
+                db.refresh(sec)
+                
+            db_pos = Position(portfolio_id=portfolio.id, security_id=sec.id, quantity=qty, avg_price=avg_price)
+            db.add(db_pos)
+            new_positions.append({
+                "symbol": symbol,
+                "quantity": qty,
+                "avg_price": avg_price
+            })
+            
+        db.commit()
+        return {"message": "Portfolio synced with Toss", "positions": new_positions}
+    except Exception as e:
+        db.rollback()
+        print(f"Error syncing toss portfolio: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/securities")
 def get_securities(db: Session = Depends(get_db)):

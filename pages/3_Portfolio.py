@@ -1,4 +1,6 @@
 import streamlit as st
+st.set_page_config(page_title="Portfolio", layout="wide")
+
 import pandas as pd
 import plotly.express as px
 import requests
@@ -19,7 +21,6 @@ def get_live_price(symbol):
     except Exception:
         return 0.0
 
-st.set_page_config(page_title="Portfolio", layout="wide")
 st.title("💼 포트폴리오 (집중도 및 리스크 관리)")
 
 db = next(get_db())
@@ -30,6 +31,20 @@ if not portfolio:
     st.stop()
 
 st.subheader(f"포트폴리오: {portfolio.name}")
+
+# Toss sync button
+if st.button("🔄 토스증권 계좌 동기화", type="primary", use_container_width=True):
+    with st.spinner("토스증권 실시간 잔고를 불러오는 중입니다..."):
+        try:
+            resp = requests.post("http://localhost:8000/api/portfolio/sync_toss")
+            if resp.status_code == 200:
+                st.toast("토스증권 계좌 동기화 성공!", icon="✅")
+            else:
+                st.error("동기화 실패")
+        except Exception as e:
+            st.error(f"동기화 중 오류 발생: {e}")
+    st.rerun()
+
 
 # Add Position Form
 with st.expander("➕ 새로운 포지션 추가 (또는 수정)"):
