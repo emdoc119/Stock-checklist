@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Date, ForeignKey, JSON
 from sqlalchemy.orm import relationship, declarative_base
-from datetime import datetime
+from datetime import datetime, timezone
 from database import engine
 
 Base = declarative_base()
@@ -67,7 +67,26 @@ class TradeJournal(Base):
     side = Column(String) # BUY / SELL
     hypothesis_text = Column(String)
     checklist_passed = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+
+class WatchlistItem(Base):
+    __tablename__ = "watchlist"
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String, index=True)
+    name = Column(String)
+    alert_threshold_pct = Column(Float, default=5.0)   # 5% or 10%
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class AlertLog(Base):
+    __tablename__ = "alert_logs"
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String)
+    alert_type = Column(String)
+    price_at_alert = Column(Float)
+    change_pct = Column(Float)
+    sent_via = Column(String)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

@@ -177,3 +177,33 @@ h1, h2, h3 {
   height: 100%;
   transition: width 0.5s ease;
 }
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+  }
+  
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-glass);
+    flex-direction: row;
+    padding: 10px;
+    overflow-x: auto;
+    white-space: nowrap;
+    align-items: center;
+  }
+
+  .sidebar h2 {
+    display: none;
+  }
+
+  .main-content {
+    padding: 20px;
+  }
+
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}

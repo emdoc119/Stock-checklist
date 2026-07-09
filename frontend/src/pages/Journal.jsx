@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api';
 
 export default function Journal() {
   const [journals, setJournals] = useState([]);
-  const [formData, setFormData] = useState({ symbol: '', side: 'BUY', hypothesis_text: '', checklist_passed: false });
+  const [formData, setFormData] = useState({ symbol: '', side: 'BUY', hypothesis_text: '', checks: {} });
 
   const fetchJournals = () => axios.get(`${API_BASE}/journals`).then(res => setJournals(res.data)).catch(console.error);
 
@@ -15,9 +15,20 @@ export default function Journal() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    axios.post(`${API_BASE}/journals`, formData).then(() => {
+    
+    // Determine if passed
+    let passed = false;
+    if (formData.side === 'BUY') {
+      passed = formData.checks?.q1 && formData.checks?.q2 && formData.checks?.q3 && formData.checks?.q4;
+    } else {
+      passed = formData.checks?.q1 || formData.checks?.q2 || formData.checks?.q3;
+    }
+    
+    const payload = { ...formData, checklist_passed: passed };
+
+    axios.post(`${API_BASE}/journals`, payload).then(() => {
       alert('Journal saved!');
-      setFormData({ symbol: '', side: 'BUY', hypothesis_text: '', checklist_passed: false });
+      setFormData({ symbol: '', side: 'BUY', hypothesis_text: '', checks: {} });
       fetchJournals();
     });
   };
@@ -43,11 +54,50 @@ export default function Journal() {
               <option value="SELL" style={{background: '#0f1115'}}>SELL</option>
             </select>
             <textarea className="input-glass" placeholder="Hypothesis" value={formData.hypothesis_text} onChange={e => setFormData({...formData, hypothesis_text: e.target.value})} required rows="3"></textarea>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-muted)' }}>
-              <input type="checkbox" checked={formData.checklist_passed} onChange={e => setFormData({...formData, checklist_passed: e.target.checked})} />
-              Checklist Passed?
-            </label>
-            <button type="submit" className="btn-primary">Record Trade</button>
+            
+            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '15px', borderRadius: '8px' }}>
+              <h4 style={{ margin: '0 0 10px 0', color: 'var(--text-muted)' }}>{formData.side === 'BUY' ? '매수 체크리스트' : '매도 체크리스트'}</h4>
+              {formData.side === 'BUY' ? (
+                <>
+                  <label style={{ display: 'flex', gap: '10px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+                    <input type="checkbox" checked={formData.checks?.q1 || false} onChange={e => setFormData({...formData, checks: {...formData.checks, q1: e.target.checked}})} />
+                    이 기업은 구조적 성장 궤도에 있는가?
+                  </label>
+                  <label style={{ display: 'flex', gap: '10px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+                    <input type="checkbox" checked={formData.checks?.q2 || false} onChange={e => setFormData({...formData, checks: {...formData.checks, q2: e.target.checked}})} />
+                    현재 시장은 공포 구간인가? (VIX {'>'} 25)
+                  </label>
+                  <label style={{ display: 'flex', gap: '10px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+                    <input type="checkbox" checked={formData.checks?.q3 || false} onChange={e => setFormData({...formData, checks: {...formData.checks, q3: e.target.checked}})} />
+                    현금 비중이 목표치 이상 확보되어 있는가?
+                  </label>
+                  <label style={{ display: 'flex', gap: '10px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+                    <input type="checkbox" checked={formData.checks?.q4 || false} onChange={e => setFormData({...formData, checks: {...formData.checks, q4: e.target.checked}})} />
+                    최대 보유 종목 수(7개) 이하인가?
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label style={{ display: 'flex', gap: '10px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+                    <input type="checkbox" checked={formData.checks?.q1 || false} onChange={e => setFormData({...formData, checks: {...formData.checks, q1: e.target.checked}})} />
+                    투자 논리(Thesis)가 훼손되었는가?
+                  </label>
+                  <label style={{ display: 'flex', gap: '10px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+                    <input type="checkbox" checked={formData.checks?.q2 || false} onChange={e => setFormData({...formData, checks: {...formData.checks, q2: e.target.checked}})} />
+                    현재 시장은 탐욕 구간인가? (탐욕지수 {'>'} 75)
+                  </label>
+                  <label style={{ display: 'flex', gap: '10px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+                    <input type="checkbox" checked={formData.checks?.q3 || false} onChange={e => setFormData({...formData, checks: {...formData.checks, q3: e.target.checked}})} />
+                    목표 수익률에 도달했는가?
+                  </label>
+                </>
+              )}
+            </div>
+
+            <button type="submit" className="btn-primary" disabled={
+              formData.side === 'BUY' ? !(formData.checks?.q1 && formData.checks?.q2 && formData.checks?.q3 && formData.checks?.q4) :
+              !(formData.checks?.q1 || formData.checks?.q2 || formData.checks?.q3)
+            }>Record Trade</button>
           </form>
         </div>
 

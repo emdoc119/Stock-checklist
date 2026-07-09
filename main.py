@@ -11,9 +11,16 @@ from models import Base, User, Portfolio, Security, Position, SecurityEvaluation
 
 app = FastAPI(title="Farmer OS API")
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -31,6 +38,12 @@ class PositionBase(BaseModel):
     symbol: str
     quantity: float
     avg_price: float
+
+class SecurityBase(BaseModel):
+    symbol: str
+    name: str
+    country: str
+
 
 class EvaluationBase(BaseModel):
     structural_growth_score: int
@@ -95,7 +108,16 @@ def get_portfolio(db: Session = Depends(get_db)):
     pos_data = []
     total_val = 0
     for p in positions:
-        val = p.quantity * p.avg_price
+        try:
+            hist = yf.Ticker(p.security.symbol).history(period="1d")
+            if not hist.empty:
+                current_price = float(hist['Close'].iloc[-1])
+            else:
+                current_price = p.avg_price
+        except Exception:
+            current_price = p.avg_price
+            
+        val = p.quantity * current_price
         total_val += val
         pos_data.append({
             "id": p.id,
@@ -103,6 +125,7 @@ def get_portfolio(db: Session = Depends(get_db)):
             "name": p.security.name,
             "quantity": p.quantity,
             "avg_price": p.avg_price,
+            "current_price": current_price,
             "current_value": val
         })
         
@@ -136,10 +159,10 @@ def get_securities(db: Session = Depends(get_db)):
     return [{"symbol": s.symbol, "name": s.name} for s in secs]
 
 @app.post("/api/securities")
-def add_security(symbol: str, name: str, country: str, db: Session = Depends(get_db)):
-    if db.query(Security).filter(Security.symbol == symbol).first():
+def add_security(security: SecurityBase, db: Session = Depends(get_db)):
+    if db.query(Security).filter(Security.symbol == security.symbol).first():
         raise HTTPException(status_code=400, detail="Security already exists")
-    s = Security(symbol=symbol, name=name, country=country)
+    s = Security(symbol=security.symbol, name=security.name, country=security.country)
     db.add(s)
     db.commit()
     return {"message": "Security added"}
@@ -215,3 +238,140 @@ def add_journal(journal: JournalBase, db: Session = Depends(get_db)):
     db.add(j)
     db.commit()
     return {"message": "Journal added"}
+
+def get_yf_history(symbol, period="1mo"):
+    try:
+        hist = yf.Ticker(symbol).history(period=period)
+        if hist.empty:
+            return {"current": 0, "history": []}
+        return {
+            "current": float(hist['Close'].iloc[-1]),
+            "history": [{"date": str(d.date()), "value": float(v)} for d, v in zip(hist.index, hist['Close'])]
+        }
+    except Exception:
+        return {"current": 0, "history": []}
+
+@app.get("/api/macro/indices")
+def get_macro_indices():
+    return {
+        "SP500": get_yf_history("^GSPC"),
+        "NASDAQ": get_yf_history("^IXIC"),
+        "KOSPI": get_yf_history("^KS11"),
+        "KOSDAQ": get_yf_history("^KQ11"),
+        "SAMSUNG": get_yf_history("005930.KS")
+    }
+
+@app.get("/api/macro/rates")
+def get_macro_rates():
+    return {
+        "DXY": get_yf_history("DX-Y.NYB"),
+        "US10Y": get_yf_history("^TNX"),
+        "KRW_USD": get_yf_history("KRW=X")
+    }
+
+@app.get("/api/macro/commodities")
+def get_macro_commodities():
+    return {
+        "GOLD": get_yf_history("GC=F"),
+        "WTI": get_yf_history("CL=F"),
+        "BTC": get_yf_history("BTC-USD")
+    }
+
+@app.get("/api/macro/vix")
+def get_macro_vix():
+    return get_yf_history("^VIX")
+
+@app.get("/api/macro/fear-greed")
+def get_macro_fear_greed():
+    vix = get_yf_history("^VIX")
+    v_val = vix.get("current", 20)
+    score = max(0, min(100, 100 - (v_val - 10) * 3.5))
+    return {"score": int(score)}
+
+from services.kis_api import get_kis_access_token, get_kis_balance
+from services.toss_api import get_toss_access_token, get_toss_portfolio
+
+@app.get("/api/broker/sync")
+def sync_broker_portfolio(db: Session = Depends(get_db)):
+    kis_token = get_kis_access_token()
+    toss_token = get_toss_access_token()
+    
+    positions = []
+    if kis_token:
+        positions.extend(get_kis_balance(kis_token))
+    if toss_token:
+        positions.extend(get_toss_portfolio(toss_token))
+        
+    if not positions:
+        return {"message": "No data found or API keys missing."}
+        
+    portfolio = db.query(Portfolio).first()
+    if not portfolio:
+        user = db.query(User).first()
+        if not user:
+            user = User(name="Farmer")
+            db.add(user)
+            db.commit()
+        portfolio = Portfolio(user_id=user.id, name="Default Portfolio")
+        db.add(portfolio)
+        db.commit()
+    
+    # Simple sync: add missing securities and update/create positions
+    for p in positions:
+        sec = db.query(Security).filter(Security.symbol == p['symbol']).first()
+        if not sec:
+            sec = Security(symbol=p['symbol'], name=p['symbol'], country='KR' if '.KS' in p['symbol'] or '.KQ' in p['symbol'] else 'US')
+            db.add(sec)
+            db.commit()
+            
+        pos = db.query(Position).filter(Position.portfolio_id == portfolio.id, Position.security_id == sec.id).first()
+        if pos:
+            pos.quantity = p['quantity']
+            pos.avg_price = p['avg_price']
+        else:
+            pos = Position(portfolio_id=portfolio.id, security_id=sec.id, quantity=p['quantity'], avg_price=p['avg_price'])
+            db.add(pos)
+    
+    db.commit()
+    return {"message": f"Synced {len(positions)} positions from brokers."}
+
+class WatchlistBase(BaseModel):
+    symbol: str
+    name: str
+    alert_threshold_pct: float = 5.0
+
+@app.get("/api/watchlist")
+def get_watchlist(db: Session = Depends(get_db)):
+    items = db.query(WatchlistItem).all()
+    return [{"id": i.id, "symbol": i.symbol, "name": i.name, "alert_threshold_pct": i.alert_threshold_pct, "is_active": i.is_active} for i in items]
+
+@app.post("/api/watchlist")
+def add_watchlist(item: WatchlistBase, db: Session = Depends(get_db)):
+    if db.query(WatchlistItem).filter(WatchlistItem.symbol == item.symbol).first():
+        raise HTTPException(status_code=400, detail="Item already in watchlist")
+    w = WatchlistItem(symbol=item.symbol, name=item.name, alert_threshold_pct=item.alert_threshold_pct)
+    db.add(w)
+    db.commit()
+    return {"message": "Watchlist added"}
+
+@app.delete("/api/watchlist/{id}")
+def delete_watchlist(id: int, db: Session = Depends(get_db)):
+    item = db.query(WatchlistItem).filter(WatchlistItem.id == id).first()
+    if item:
+        db.delete(item)
+        db.commit()
+    return {"message": "Watchlist deleted"}
+
+@app.get("/api/alerts/history")
+def get_alerts_history(db: Session = Depends(get_db)):
+    logs = db.query(AlertLog).order_by(AlertLog.created_at.desc()).limit(20).all()
+    return [{"id": l.id, "symbol": l.symbol, "alert_type": l.alert_type, "change_pct": l.change_pct, "created_at": l.created_at.isoformat()} for l in logs]
+
+from fastapi import BackgroundTasks
+from services.price_monitor import check_prices
+
+@app.post("/api/monitor/start")
+def start_monitor(background_tasks: BackgroundTasks):
+    background_tasks.add_task(check_prices)
+    return {"message": "Monitor task started"}
+

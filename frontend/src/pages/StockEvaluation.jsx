@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api';
 
 export default function StockEvaluation() {
   const [symbols, setSymbols] = useState([]);
@@ -39,7 +39,8 @@ export default function StockEvaluation() {
   }, [selectedSymbol]);
 
   const handleChange = (e) => {
-    setEvalData({ ...evalData, [e.target.name]: parseInt(e.target.value) || e.target.value });
+    const value = e.target.type === 'range' ? parseInt(e.target.value) : e.target.value;
+    setEvalData({ ...evalData, [e.target.name]: value });
   };
 
   const handleSubmit = (e) => {
