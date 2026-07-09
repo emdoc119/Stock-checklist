@@ -209,10 +209,11 @@ def get_market_data():
                 t = yf.Ticker(symbol)
                 hist = t.history(period="1mo")
                 if not hist.empty:
-                    val = float(hist['Close'].iloc[-1])
-                    prev = float(hist['Close'].iloc[-2]) if len(hist) > 1 else val
+                    close_series = hist['Close'].ffill().fillna(0)
+                    val = float(close_series.iloc[-1])
+                    prev = float(close_series.iloc[-2]) if len(close_series) > 1 else val
                     diff = val - prev
-                    hist_list = hist['Close'].tolist()[-30:]
+                    hist_list = close_series.tolist()[-30:]
             except Exception as e:
                 print(f"Error fetching {symbol}: {e}")
             
@@ -492,9 +493,10 @@ def get_yf_history(symbol, period="1mo"):
         hist = yf.Ticker(symbol).history(period=period)
         if hist.empty:
             return {"current": 0, "history": []}
+        close_series = hist['Close'].ffill().fillna(0)
         return {
-            "current": float(hist['Close'].iloc[-1]),
-            "history": [{"date": str(d.date()), "value": float(v)} for d, v in zip(hist.index, hist['Close'])]
+            "current": float(close_series.iloc[-1]),
+            "history": [{"date": str(d.date()), "value": float(v)} for d, v in zip(hist.index, close_series)]
         }
     except Exception:
         return {"current": 0, "history": []}
